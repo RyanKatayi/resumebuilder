@@ -1,5 +1,5 @@
 import { Experience, PersonalInfo, Skill, Resume } from '@/types/resume'
-import deepseek from './deepseek'
+import { getAIClient, getAIModel } from './openai-client'
 
 export interface AIGenerationOptions {
   jobDescription?: string
@@ -38,8 +38,9 @@ Requirements:
 - No generic phrases
 - Quantify where possible`
 
-    const response = await deepseek.chat.completions.create({
-      model: "deepseek-chat",
+    const client = getAIClient()
+    const response = await client.chat.completions.create({
+      model: getAIModel(),
       messages: [
         {
           role: "system",
@@ -86,8 +87,9 @@ Return the response in this JSON format:
   "achievements": ["achievement 1", "achievement 2", "achievement 3"]
 }`
 
-    const response = await deepseek.chat.completions.create({
-      model: "deepseek-chat",
+    const client = getAIClient()
+    const response = await client.chat.completions.create({
+      model: getAIModel(),
       messages: [
         {
           role: "system",
@@ -184,8 +186,9 @@ ${JSON.stringify(resume, null, 2)}
 
 Return the enhanced resume in the same JSON structure.`
 
-    const response = await retryWithDelay(() => deepseek.chat.completions.create({
-      model: "deepseek-chat",
+    const client = getAIClient()
+    const response = await retryWithDelay(() => client.chat.completions.create({
+      model: getAIModel(),
       messages: [
         {
           role: "system",

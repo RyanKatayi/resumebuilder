@@ -10,31 +10,29 @@ import { SkillsForm } from '@/components/forms/SkillsForm'
 import { ProjectsForm } from '@/components/forms/ProjectsForm'
 import { AwardsForm } from '@/components/forms/AwardsForm'
 import { generateSummary } from '@/lib/ai'
+import { hasApiKey } from '@/lib/openai-client'
 import { Eye, Download, Save, Sparkles, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/ui/toast'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 interface ResumeBuilderProps {
-  userId: string
   resumeId?: string
   initialData?: Resume
   mode?: 'create' | 'edit'
 }
 
-export function ResumeBuilder({ userId, resumeId, initialData, mode = 'create' }: ResumeBuilderProps) {
+export function ResumeBuilder({ resumeId, initialData, mode = 'create' }: ResumeBuilderProps) {
   const router = useRouter()
-  const supabase = createClient()
   const { addToast } = useToast()
   const [resume, setResume] = useState<Resume>(initialData || {
-    id: resumeId || '',
-    userId,
+    id: resumeId || crypto.randomUUID(),
+    userId: 'local-user',
     title: 'My Resume',
     personalInfo: {
       firstName: '',
@@ -62,6 +60,15 @@ export function ResumeBuilder({ userId, resumeId, initialData, mode = 'create' }
   const [exporting, setExporting] = useState(false)
 
   const handleGenerateSummary = async () => {
+    if (!hasApiKey()) {
+      addToast({
+        title: 'API Key Required',
+        description: 'Please add your API key in settings to use AI features.',
+        variant: 'destructive'
+      })
+      return
+    }
+
     if (!resume.personalInfo.firstName || resume.experience.length === 0) {
       addToast({
         title: 'Missing information',
@@ -100,8 +107,10 @@ export function ResumeBuilder({ userId, resumeId, initialData, mode = 'create' }
     setSaving(true)
     try {
       const resumeData = {
+        id: resume.id,
+        userId: resume.userId,
         title: resume.title,
-        personal_info: resume.personalInfo,
+        personalInfo: resume.personalInfo,
         summary: resume.summary,
         experience: resume.experience,
         education: resume.education,
@@ -109,46 +118,28 @@ export function ResumeBuilder({ userId, resumeId, initialData, mode = 'create' }
         projects: resume.projects,
         awards: resume.awards,
         template: resume.template,
+        createdAt: resume.createdAt,
+        updatedAt: new Date().toISOString()
       }
 
-      if (mode === 'edit' && resumeId) {
-        // Update existing resume
-        const { error } = await supabase
-          .from('resumes')
-          .update({
-            ...resumeData,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', resumeId)
-          .eq('user_id', userId)
-
-        if (error) throw error
-        addToast({
-          title: 'Resume updated',
-          description: 'Your resume has been updated successfully.',
-          variant: 'success'
-        })
-      } else {
-        // Create new resume
-        const { data, error } = await supabase
-          .from('resumes')
-          .insert({
-            ...resumeData,
-            user_id: userId,
-          })
-          .select()
-          .single()
-
-        if (error) throw error
-        
-        // Update the resumeId in state and redirect to edit page
-        setResume(prev => ({ ...prev, id: data.id }))
-        addToast({
-          title: 'Resume created',
-          description: 'Your resume has been created successfully.',
-          variant: 'success'
-        })
-        router.push(`/edit/${data.id}`)
+      // Save to localStorage
+      localStorage.setItem(`resume_${resumeData.id}`, JSON.stringify(resumeData))
+      
+      // Update list of resume IDs
+      const resumeIds = JSON.parse(localStorage.getItem('resumeIds') || '[]')
+      if (!resumeIds.includes(resumeData.id)) {
+        resumeIds.push(resumeData.id)
+        localStorage.setItem('resumeIds', JSON.stringify(resumeIds))
+      }
+      
+      addToast({
+        title: mode === 'edit' ? 'Resume updated' : 'Resume created',
+        description: 'Your resume has been saved locally.',
+        variant: 'success'
+      })
+      
+      if (mode === 'create') {
+        router.push(`/edit/${resumeData.id}`)
       }
     } catch (error) {
       console.error('Error saving resume:', error)

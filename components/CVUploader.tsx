@@ -2,28 +2,24 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/utils/supabase/client'
 import { extractTextFromCV } from '@/lib/cv-extractor'
 import { formatToProfessionalStyle } from '@/lib/resume-formatter'
+import { hasApiKey } from '@/lib/openai-client'
 import { Upload, CheckCircle, AlertCircle, Loader2, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import Link from 'next/link'
+import { ApiKeySettings } from '@/components/ApiKeySettings'
 
-interface CVUploaderProps {
-  userId: string
-}
-
-export function CVUploader({ userId }: CVUploaderProps) {
+export function CVUploader() {
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState<'idle' | 'extracting' | 'formatting' | 'saving' | 'success' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createClient()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -49,6 +45,11 @@ export function CVUploader({ userId }: CVUploaderProps) {
   const handleUpload = async () => {
     if (!file) return
 
+    if (!hasApiKey()) {
+      setError('Please add your API key in settings to use AI features.')
+      return
+    }
+
     setUploading(true)
     setStatus('extracting')
     setProgress(10)
@@ -68,36 +69,42 @@ export function CVUploader({ userId }: CVUploaderProps) {
       const professionalCV = await formatToProfessionalStyle(extractedText)
       console.log('Professional formatted CV:', professionalCV)
 
-      // Step 3: Save to database
-      console.log('Saving to database...')
+      // Step 3: Save to localStorage
+      console.log('Saving resume...')
       setStatus('saving')
       setProgress(80)
       
-      const { data, error } = await supabase
-        .from('resumes')
-        .insert({
-          title: professionalCV.title,
-          personal_info: professionalCV.personalInfo,
-          summary: professionalCV.summary,
-          experience: professionalCV.experience || [],
-          education: professionalCV.education || [],
-          skills: professionalCV.skills || [],
-          projects: professionalCV.projects || [],
-          awards: professionalCV.awards || [],
-          template: professionalCV.template,
-          user_id: userId,
-        })
-        .select()
-        .single()
-
-      if (error) throw error
+      const resumeId = crypto.randomUUID()
+      const resumeData = {
+        id: resumeId,
+        userId: 'local-user',
+        title: professionalCV.title,
+        personalInfo: professionalCV.personalInfo,
+        summary: professionalCV.summary,
+        experience: professionalCV.experience || [],
+        education: professionalCV.education || [],
+        skills: professionalCV.skills || [],
+        projects: professionalCV.projects || [],
+        awards: professionalCV.awards || [],
+        template: professionalCV.template,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+      
+      // Save to localStorage
+      localStorage.setItem(`resume_${resumeId}`, JSON.stringify(resumeData))
+      
+      // Update resume IDs list
+      const resumeIds = JSON.parse(localStorage.getItem('resumeIds') || '[]')
+      resumeIds.push(resumeId)
+      localStorage.setItem('resumeIds', JSON.stringify(resumeIds))
 
       setStatus('success')
       setProgress(100)
       
       // Show success message
       setTimeout(() => {
-        router.push(`/cv/${data.id}`)
+        router.push(`/cv/${resumeId}`)
       }, 1500)
 
     } catch (error) {
@@ -222,9 +229,18 @@ export function CVUploader({ userId }: CVUploaderProps) {
 
           {/* Error Message */}
           {error && (
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
-              <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-red-700">{error}</span>
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="text-sm text-red-700">{error}</span>
+                  {error.includes('API key') && (
+                    <div className="mt-2">
+                      <ApiKeySettings />
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

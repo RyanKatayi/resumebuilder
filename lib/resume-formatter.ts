@@ -1,5 +1,5 @@
 import { Resume, Education, Experience, Skill, Project, Award } from '@/types/resume'
-import deepseek from './deepseek'
+import { getAIClient, getAIModel } from './openai-client'
 
 // Fallback function to create a resume from raw text when AI fails
 // This function performs a best-effort parse to avoid data loss.
@@ -72,10 +72,11 @@ export async function formatToProfessionalStyle(extractedText: string): Promise<
   }
 
   try {
-    console.log('Starting professional style formatting with DeepSeek...')
+    console.log('Starting professional style formatting with AI...')
     
-    const response = await deepseek.chat.completions.create({
-      model: "deepseek-chat",
+    const client = getAIClient()
+    const response = await client.chat.completions.create({
+      model: getAIModel(),
       messages: [
         {
           role: "system",

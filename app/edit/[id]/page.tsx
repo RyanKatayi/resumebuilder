@@ -1,27 +1,47 @@
+'use client'
+
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
 import { ResumeBuilder } from '@/components/ResumeBuilder'
+import { useEffect, useState } from 'react'
+import { Resume } from '@/types/resume'
 
-export default async function EditPage({ params }: { params: Promise<{ id: string }> }) {
-  const supabase = await createClient()
-  const { id } = await params
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    redirect('/login')
-  }
+export default function EditPage({ params }: { params: Promise<{ id: string }> }) {
+  const [resumeId, setResumeId] = useState<string>('')
+  const [resume, setResume] = useState<Resume | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // Fetch the resume data
-  const { data: resume, error } = await supabase
-    .from('resumes')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+  useEffect(() => {
+    const loadResume = async () => {
+      const { id } = await params
+      setResumeId(id)
+      
+      // Fetch the resume data from localStorage
+      const resumeData = localStorage.getItem(`resume_${id}`)
+      
+      if (!resumeData) {
+        redirect('/dashboard')
+      }
+      
+      try {
+        const parsedResume = JSON.parse(resumeData)
+        setResume(parsedResume)
+      } catch (error) {
+        console.error('Error parsing resume data:', error)
+        redirect('/dashboard')
+      }
+      
+      setLoading(false)
+    }
+    
+    loadResume()
+  }, [params])
 
-  if (error || !resume) {
-    redirect('/dashboard')
+  if (loading || !resume) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    )
   }
 
   return (
@@ -38,8 +58,7 @@ export default async function EditPage({ params }: { params: Promise<{ id: strin
         
         <ResumeBuilder 
           initialData={resume}
-          userId={user.id}
-          resumeId={id}
+          resumeId={resumeId}
           mode="edit"
         />
       </div>

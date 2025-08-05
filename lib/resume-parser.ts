@@ -1,5 +1,5 @@
 import { Resume } from '@/types/resume'
-import deepseek from './deepseek'
+import { getAIClient, getAIModel } from './openai-client'
 
 export async function parseResumeFile(file: File): Promise<Resume> {
   try {
@@ -225,8 +225,9 @@ ${content}
 Important: Return only valid JSON, no additional text or formatting.`
 
   try {
-    const result = await retryWithDelay(() => deepseek.chat.completions.create({
-      model: "deepseek-chat",
+    const client = getAIClient()
+    const result = await retryWithDelay(() => client.chat.completions.create({
+      model: getAIModel(),
       messages: [
         {
           role: "system",

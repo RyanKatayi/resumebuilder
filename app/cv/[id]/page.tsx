@@ -1,46 +1,46 @@
+'use client'
+
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
 import { CVViewer } from '@/components/CVViewer'
 import { Resume } from '@/types/resume'
+import { useEffect, useState } from 'react'
 
-export default async function CVPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const supabase = await createClient()
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    redirect('/login')
+export default function CVPage({ params }: { params: Promise<{ id: string }> }) {
+  const [resume, setResume] = useState<Resume | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const loadResume = async () => {
+      const { id } = await params
+      
+      // Get the CV data from localStorage
+      const resumeData = localStorage.getItem(`resume_${id}`)
+      
+      if (!resumeData) {
+        redirect('/dashboard')
+      }
+      
+      try {
+        const parsedResume = JSON.parse(resumeData)
+        setResume(parsedResume)
+      } catch (error) {
+        console.error('Error parsing resume data:', error)
+        redirect('/dashboard')
+      }
+      
+      setLoading(false)
+    }
+    
+    loadResume()
+  }, [params])
+
+  if (loading || !resume) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    )
   }
 
-  // Get the CV data
-  const { data: cv, error } = await supabase
-    .from('resumes')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
-
-  if (error || !cv) {
-    redirect('/dashboard')
-  }
-
-  // Transform database resume to Resume type
-  const resumeData: Resume = {
-    id: cv.id,
-    userId: cv.user_id,
-    title: cv.title,
-    personalInfo: cv.personal_info,
-    summary: cv.summary,
-    experience: cv.experience,
-    education: cv.education,
-    skills: cv.skills,
-    projects: cv.projects,
-    awards: cv.awards,
-    template: cv.template,
-    createdAt: cv.created_at,
-    updatedAt: cv.updated_at,
-  }
-
-  return <CVViewer resume={resumeData} />
+  return <CVViewer resume={resume} />
 }

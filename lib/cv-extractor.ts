@@ -28,37 +28,13 @@ export async function extractTextFromCV(file: File): Promise<string> {
 
 async function extractFromPDF(file: File): Promise<string> {
   try {
-    // Use PDF.js for PDF text extraction
-    const pdfjsLib = await import('pdfjs-dist')
-    
-    // Set up PDF.js worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`
-    
-    const arrayBuffer = await file.arrayBuffer()
-    const typedArray = new Uint8Array(arrayBuffer)
-    
-    const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise
-    let fullText = ''
-    
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum)
-      const textContent = await page.getTextContent()
-      const pageText = textContent.items
-        .map((item: unknown) => {
-          if (item && typeof item === 'object' && 'str' in item) {
-            return (item as { str: string }).str
-          }
-          return ''
-        })
-        .join(' ')
-      fullText += pageText + '\n'
-    }
-    
-    return fullText.trim()
-  } catch (error) {
-    console.error('Error extracting PDF text:', error)
-    // Fallback to basic text extraction if PDF.js fails
+    // For now, just use the basic extraction method
+    // PDF.js has compatibility issues in the browser environment
+    console.log('Using basic PDF extraction method')
     return await basicPDFExtraction(file)
+  } catch (error) {
+    console.error('PDF extraction failed:', error)
+    return `Unable to extract text from PDF: ${file.name}. Please try converting to a text document first or manually enter your CV information.`
   }
 }
 
@@ -68,36 +44,72 @@ async function basicPDFExtraction(file: File): Promise<string> {
     const uint8Array = new Uint8Array(arrayBuffer)
     const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(uint8Array)
     
-    // Extract text using simple patterns
-    const patterns = [
-      /\(([^)]+)\)/g,  // Text in parentheses
-      /\[([^\]]+)\]/g, // Text in brackets
-      /\/([A-Za-z0-9\s]+)\s/g, // After forward slashes
-      /BT\s*([^ET]*)\s*ET/g, // Between BT and ET
-      /Tj\s*([^\/\s]+)/g, // After Tj commands
-    ]
-    
+    // Look for text patterns in PDF structure
     let extractedText = ''
     
-    patterns.forEach(pattern => {
-      const matches = text.match(pattern)
-      if (matches) {
-        matches.forEach(match => {
-          const cleaned = match
-            .replace(/[()[\]\/]/g, ' ')
-            .replace(/BT\s*|ET\s*/g, ' ')
-            .replace(/Tj\s*/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim()
-          
-          if (cleaned.length > 2 && /[a-zA-Z]/.test(cleaned)) {
-            extractedText += cleaned + ' '
-          }
-        })
+    // Pattern 1: Text between parentheses (common in PDFs)
+    const parenMatches = text.matchAll(/\(([^)]+)\)/g)
+    for (const match of parenMatches) {
+      const content = match[1]
+        // Decode common PDF escape sequences
+        .replace(/\\r/g, '\r')
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\\(/g, '(')
+        .replace(/\\\)/g, ')')
+        .replace(/\\\\/g, '\\')
+        .trim()
+      
+      if (content.length > 1 && /[a-zA-Z0-9]/.test(content)) {
+        extractedText += content + ' '
       }
-    })
+    }
     
-    return extractedText.trim() || `PDF content extracted from ${file.name}. Please manually verify the information.`
+    // Pattern 2: Text in stream objects
+    const streamMatches = text.matchAll(/stream\s*\n([\s\S]*?)\nendstream/g)
+    for (const match of streamMatches) {
+      const streamContent = match[1]
+      // Extract readable text from stream
+      const readable = streamContent
+        .split(/\s+/)
+        .filter(word => word.length > 2 && /^[a-zA-Z0-9\s.,\-@]+$/.test(word))
+        .join(' ')
+      
+      if (readable) {
+        extractedText += readable + ' '
+      }
+    }
+    
+    // Pattern 3: Look for Tj commands (text showing)
+    const tjMatches = text.matchAll(/\((.*?)\)\s*Tj/g)
+    for (const match of tjMatches) {
+      const content = match[1]
+        .replace(/\\([0-9]{3})/g, (m, oct) => String.fromCharCode(parseInt(oct, 8)))
+        .trim()
+      
+      if (content.length > 1) {
+        extractedText += content + ' '
+      }
+    }
+    
+    // Clean up the extracted text
+    extractedText = extractedText
+      .replace(/\s+/g, ' ')
+      .replace(/[^\x20-\x7E\n]/g, ' ') // Keep only printable ASCII
+      .trim()
+    
+    // If we got substantial text, return it
+    if (extractedText.length > 50) {
+      return extractedText
+    }
+    
+    // Fallback message
+    return `PDF parsing yielded limited results. The file "${file.name}" may be image-based or use complex encoding. Please consider:
+1. Converting your PDF to a text document (.txt or .docx)
+2. Using a PDF with selectable text (not scanned)
+3. Manually entering your CV information
+
+Extracted preview: ${extractedText.substring(0, 100)}...`
   } catch (error) {
     console.error('Basic PDF extraction failed:', error)
     return `Unable to extract text from PDF: ${file.name}. Please manually enter your CV information.`

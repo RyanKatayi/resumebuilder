@@ -1,25 +1,69 @@
-import { createClient } from '@/utils/supabase/server'
-import { redirect } from 'next/navigation'
+'use client'
+
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, FileText, LogOut } from 'lucide-react'
+import { Plus, FileText, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { DeleteResumeButton } from '@/components/DeleteResumeButton'
+import { Resume } from '@/types/resume'
+import { ApiKeySettings } from '@/components/ApiKeySettings'
 
-export default async function Dashboard() {
-  const supabase = await createClient()
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    redirect('/login')
+export default function Dashboard() {
+  const [resumes, setResumes] = useState<Resume[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadResumes()
+  }, [])
+
+  const loadResumes = () => {
+    const resumeIds = JSON.parse(localStorage.getItem('resumeIds') || '[]')
+    const loadedResumes: Resume[] = []
+    
+    resumeIds.forEach((id: string) => {
+      const resumeData = localStorage.getItem(`resume_${id}`)
+      if (resumeData) {
+        try {
+          const resume = JSON.parse(resumeData)
+          loadedResumes.push(resume)
+        } catch (error) {
+          console.error(`Error parsing resume ${id}:`, error)
+        }
+      }
+    })
+    
+    // Sort by updated date
+    loadedResumes.sort((a, b) => 
+      new Date(b.updatedAt || b.createdAt).getTime() - 
+      new Date(a.updatedAt || a.createdAt).getTime()
+    )
+    
+    setResumes(loadedResumes)
+    setLoading(false)
   }
 
-  // Fetch user's resumes
-  const { data: resumes } = await supabase
-    .from('resumes')
-    .select('*')
-    .order('updated_at', { ascending: false })
+  const handleDelete = (resumeId: string, resumeTitle: string) => {
+    if (confirm(`Are you sure you want to delete "${resumeTitle}"?`)) {
+      // Remove from localStorage
+      localStorage.removeItem(`resume_${resumeId}`)
+      
+      // Update resume IDs list
+      const resumeIds = JSON.parse(localStorage.getItem('resumeIds') || '[]')
+      const updatedIds = resumeIds.filter((id: string) => id !== resumeId)
+      localStorage.setItem('resumeIds', JSON.stringify(updatedIds))
+      
+      // Reload resumes
+      loadResumes()
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-gray-100">
@@ -30,27 +74,22 @@ export default async function Dashboard() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">My Resumes</h1>
             <p className="text-gray-600 mt-1 flex items-center gap-2">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              Welcome back, {user.email}
+              All resumes are saved locally in your browser
             </p>
           </div>
           <div className="flex gap-3">
+            <ApiKeySettings />
             <Button asChild className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium transition-all duration-200 transform hover:scale-105">
               <Link href="/upload" aria-label="Upload a new CV to create a professional resume">
                 <Plus className="h-4 w-4 mr-2" aria-hidden="true" />
                 Upload CV
               </Link>
             </Button>
-            <form action="/auth/signout" method="post">
-              <Button type="submit" variant="outline" className="border-gray-300 text-gray-600 hover:text-gray-800 hover:bg-gray-50 transition-colors" aria-label="Sign out of your account">
-                <LogOut className="h-4 w-4 mr-2" aria-hidden="true" />
-                Sign Out
-              </Button>
-            </form>
           </div>
         </div>
 
         {/* Resumes Grid */}
-        {resumes && resumes.length > 0 ? (
+        {resumes.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {resumes.map((resume) => (
               <Card key={resume.id} className="group hover:shadow-xl transition-all duration-300 border-0 shadow-sm bg-white rounded-xl overflow-hidden hover:scale-[1.02]">
@@ -61,7 +100,7 @@ export default async function Dashboard() {
                     </div>
                     <div className="text-right">
                       <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                        {new Date(resume.updated_at).toLocaleDateString()}
+                        {new Date(resume.updatedAt || resume.createdAt).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
@@ -84,7 +123,15 @@ export default async function Dashboard() {
                           Edit
                         </Link>
                       </Button>
-                      <DeleteResumeButton resumeId={resume.id} resumeTitle={resume.title} />
+                      <Button 
+                        onClick={() => handleDelete(resume.id, resume.title)}
+                        size="sm" 
+                        variant="outline"
+                        className="border-red-300 text-red-600 hover:text-red-800 hover:bg-red-50 transition-colors"
+                        aria-label={`Delete ${resume.title} resume`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
